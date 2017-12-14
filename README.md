@@ -1,4 +1,4 @@
-# @ltd/j-fs
+# `require('@ltd/j-fs')`
 
 原生文件系统模块的 `promisify` 扩展。
 
