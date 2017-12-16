@@ -6,7 +6,7 @@ exports = module.exports = Object.create(null);
 
 	const fs = require('fs');
 
-	for( const name in Object ){
+	for( const name in fs ){
 		if( name+'Sync' in fs ){
 			exports[name+'Async'] = Async(fs[name]);
 		}
