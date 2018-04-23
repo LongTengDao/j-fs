@@ -14,17 +14,17 @@ const { asyncIterator } = Symbol;
 	}
 
 	function Fs( name ){
-		const fs = require( name );
-		const exports = Object.create(null);
-		for( const name in fs ){
-			if( name+'Sync' in fs ){
-				exports[name+'Async'] = Async( fs[name] );
+		const FS = require( name );
+		const fs = Object.create(null);
+		for( const name in FS ){
+			if( name+'Sync' in FS ){
+				fs[name+'Async'] = Async( FS[name] );
 			}
 		}
-		exports['existsAsync'] = ExistsAsync( fs );
-		exports['createAsyncReadStream'] = CreateAsyncReadStream( fs );
-		exports['createAsyncWriteStream'] = CreateAsyncWriteStream( fs );
-		return Object.assign( exports, fs );
+		fs['existsAsync'] = ExistsAsync( FS );
+		fs['createAsyncReadStream'] = CreateAsyncReadStream( FS );
+		fs['createAsyncWriteStream'] = CreateAsyncWriteStream( FS );
+		return Object.assign( fs, FS );
 	}
 
 })({
