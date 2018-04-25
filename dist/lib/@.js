@@ -4,14 +4,16 @@ const { asyncIterator } = Symbol;
 
 (({ Async, ExistsAsync, CreateAsyncReadStream, CreateAsyncWriteStream })=>{
 
-	try{
-		require('electron');
-		module.exports = Fs( 'original-fs' );
-		module.exports.asar = Fs( 'fs' );
+	if( 'electron' in process.versions ){
+		try{
+			require('electron');
+			module.exports = Fs( 'original-fs' );
+			module.exports.asar = Fs( 'fs' );
+			return;
+		}
+		catch(error){}
 	}
-	catch(error){
-		module.exports = Fs( 'fs' );
-	}
+	module.exports = Fs( 'fs' );
 
 	function Fs( name ){
 		const FS = require( name );
