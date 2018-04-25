@@ -63,7 +63,7 @@ const { asyncIterator } = Symbol;
 			return stream;
 		},
 
-	CreateAsyncWritenStream:({ createWriteStream })=>
+	CreateAsyncWriteStream:({ createWriteStream })=>
 		function(){
 			const stream = createWriteStream(...arguments).on('error',onError).on('drain',onDrain);
 			stream[asyncIterator] = {
