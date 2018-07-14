@@ -1,8 +1,13 @@
 'use strict';
 
 const { asyncIterator } = Symbol;
+const _resolve = Symbol('_resolve');
+const _reject = Symbol('_reject');
+const _error = Symbol('_error');
+const _done = Symbol('_done');
+const _readable = Symbol('_readable');
 
-(({ Async, ExistsAsync, CreateAsyncReadStream, CreateAsyncWriteStream })=>{
+(({ Async, ExistsAsync, CreateReadStreamAsync, CreateWriteStreamAsync })=>{
 
 	if( 'electron' in process.versions ){
 		try{
@@ -17,136 +22,154 @@ const { asyncIterator } = Symbol;
 
 	function Fs( name ){
 		const FS = require( name );
-		const fs = Object.create(null);
+		const fs = {};
 		for( const name in FS ){
 			if( name+'Sync' in FS ){
 				fs[name+'Async'] = Async( FS[name] );
 			}
 		}
-		fs['existsAsync'] = ExistsAsync( FS );
-		fs['createAsyncReadStream'] = CreateAsyncReadStream( FS );
-		fs['createAsyncWriteStream'] = CreateAsyncWriteStream( FS );
-		return Object.assign( fs, FS );
+		fs.existsAsync = ExistsAsync( FS.access );
+		fs.createReadStreamAsync = CreateReadStreamAsync( FS.createReadStream );
+		fs.createWriteStreamAsync = CreateWriteStreamAsync( FS.createWriteStream );
+		return Object.assign( {}, fs, FS );
 	}
 
 })({
 
-	Async:method=>
-		function(){
+	Async(method){
+		return function(){
 			return new Promise((resolve,reject)=>
 				method(...arguments,(error,value)=>
 					error===null ? resolve(value) : reject(error)
 				)
 			);
-		},
+		};
+	},
 
-	ExistsAsync:({ access })=>
-		function(){
+	ExistsAsync(access){
+		return function existsAsync(path){
 			return new Promise((resolve,reject)=>
-				access(arguments[0],error=>
-					error===null ? resolve(true) : ( error.code==='ENOENT' ? resolve(false) : reject(error) )
+				access(path,error=>
+					error===null ? resolve(true) : error.code==='ENOENT' ? resolve(false) : reject(error)
 				)
 			);
-		},
+		};
+	},
 
-	CreateAsyncReadStream:({ createReadStream })=>
-		function(){
-			const stream = createReadStream(...arguments).on('error',onError).on('readable',onReadable);
-			stream[asyncIterator] = {
-				stream,
-				resolve:undefined,
-				reject:undefined,
-				error:null,
-				readable:false,
-				done:false,
-				next,
-			};
-			stream.readAsync = readAsync;
-			return stream;
-		},
+	CreateReadStreamAsync(createReadStream){
+		return function createReadStreamAsync(){
+			return new Promise((resolve,reject)=>{
+				const stream = createReadStream(...arguments);
+				stream.writeAsync = writeAsync;
+				stream.endAsync = endAsync;
+				stream[_resolve] = resolve;
+				stream[_reject] = reject;
+				stream[_error] = null;
+				stream.on( 'error', onError );
+				stream.on( 'ready', onResolve );
+				stream.on( 'readable', onReadable );
+				stream.on( 'end', onEnd );
+			});
+		};
+	},
 
-	CreateAsyncWriteStream:({ createWriteStream })=>
-		function(){
-			const stream = createWriteStream(...arguments).on('error',onError).on('drain',onDrain);
-			stream[asyncIterator] = {
-				stream,
-				resolve:undefined,
-				reject:undefined,
-				error:null,
-			};
-			stream.writeAsync = writeAsync;
-			return stream;
-		},
+	CreateWriteStreamAsync(createWriteStream){
+		return function createWriteStreamAsync(){
+			return new Promise((resolve,reject)=>{
+				const stream = createWriteStream(...arguments);
+				stream.next = next;
+				stream[asyncIterator] = AsyncGenerator;
+				stream[_resolve] = resolve;
+				stream[_reject] = reject;
+				stream[_error] = null;
+				stream[_readable] = false;
+				stream[_done] = false;
+				stream.on( 'error', onError );
+				stream.on( 'ready', onResolve );
+				stream.on( 'drain', onResolve );
+				stream.on( 'finish', onResolve );
+			});
+		};
+	},
 
 });
 
-async function readAsync(){
-	return ( await this[asyncIterator].next() ).value || null;
-}
-
 function writeAsync(){
 	return new Promise((resolve,reject)=>{
-		const { error } = this[asyncIterator];
-		if( error ){ return reject( error ); }
-		if( this.write(...arguments) ){ return resolve(); }
-		this[asyncIterator].resolve = resolve;
-		this[asyncIterator].reject = reject;
+		if( this[_error] ){ return reject( this[_error] ); }
+		if( this.write(...arguments) ){
+			return resolve();
+		}
+		this[_resolve] = resolve;
+		this[_reject] = reject;
 	});
 }
 
-function onError(error){
-	this.removeAllListeners();
-	this[asyncIterator].error = error;
-	const { reject } = this[asyncIterator];
-	if( reject ){
-		this[asyncIterator].reject = undefined;
-		this[asyncIterator].resolve = undefined;
-		return reject( error );
-	}
-}
-
-function onDrain(){
-	const { resolve } = this[asyncIterator];
-	this[asyncIterator].reject = undefined;
-	this[asyncIterator].resolve = undefined;
-	return resolve();
-}
-
-function onReadable(){
-	const { resolve } = this[asyncIterator];
-	if( resolve ){
-		this[asyncIterator].reject = undefined;
-		this[asyncIterator].resolve = undefined;
-		const chunk = this.read();
-		if( chunk===null ){
-			this.removeAllListeners();
-			return resolve({ done:this[asyncIterator].done=true, value:undefined });
-		}
-		else{
-			return resolve({ done:false, value:chunk });
-		}
-	}
-	else{
-		this[asyncIterator].readable = true;
-	}
+function endAsync(){
+	return new Promise((resolve,reject)=>{
+		if( this[_error] ){ return reject( this[_error] ); }
+		this[_resolve] = resolve;
+		this[_reject] = reject;
+		this.end(...arguments);
+	});
 }
 
 function next(){
 	return new Promise((resolve,reject)=>{
-		if( this.readable ){
-			this.readable = false;
-			const chunk = this.stream.read();
-			if( chunk===null ){
-				this.stream.removeAllListeners();
-				return resolve({ done:this.done=true, value:undefined });
-			}
-			else{
-				return resolve({ done:false, value:chunk });
-			}
+		if( this[_readable] ){
+			this[_readable] = false;
+			return resolve({ done:false, value:this.read() });
 		}
-		if( this.done ){ return resolve({ done:true }); }
-		if( this.error ){ return reject( this.error ); }
+		if( this[_done] ){
+			return resolve({ done:true, value:undefined });
+		}
+		if( this[_error] ){
+			return reject( this[_error] );
+		}
 		this.resolve = resolve;
 		this.reject = reject;
 	});
+}
+
+function onError(error){
+	this[_error] = error;
+	const reject = this[_reject];
+	if( reject ){
+		this[_resolve] = undefined;
+		this[_reject] = undefined;
+		return reject( error );
+	}
+}
+
+function onResolve(){
+	const resolve = this[_resolve];
+	this[_resolve] = undefined;
+	this[_reject] = undefined;
+	return resolve();
+}
+
+function onReadable(){
+	const resolve = this[_resolve];
+	if( resolve ){
+		this[_resolve] = undefined;
+		this[_reject] = undefined;
+		return resolve({ done:false, value:this.read() });
+	}
+	else{
+		this[_readable] = true;
+	}
+}
+
+function onEnd(){
+	this[_done] = true;
+	const resolve = this[_resolve];
+	if( resolve ){
+		this[_resolve] = undefined;
+		this[_reject] = undefined;
+		return resolve({ done:true, value:undefined });
+	}
+}
+
+function AsyncGenerator(){
+	return this;
 }
