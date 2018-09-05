@@ -10,27 +10,33 @@ const _readable = Symbol('_readable');
 (({ Async, ExistsAsync, CreateReadStreamAsync, CreateWriteStreamAsync })=>{
 
 	if( 'electron' in process.versions ){
-		try{
-			require('electron');
-			module.exports = Fs( 'original-fs' );
-			module.exports.asar = Fs( 'fs' );
-			return;
-		}
-		catch(error){}
+		require( 'electron' );
+		module.exports = Fs( 'original-fs' );
+		if( 'asar' in module.exports ){ throw new Error( '{@ltd/j-fs} 原生 `fs` 模块中已经存在 `asar` 属性，为防止误用，特此终止！' ); }
+		module.exports.asar = Fs( 'fs' );
 	}
-	module.exports = Fs( 'fs' );
+	else{
+		module.exports = Fs( 'fs' );
+	}
 
 	function Fs( name ){
 		const FS = require( name );
-		const fs = {};
+		if( 'async' in FS ){ throw new Error( '{@ltd/j-fs} 原生 `fs` 模块中已经存在 `async` 属性，为防止误用，特此终止！' ); }
+		if( 'sync' in FS ){ throw new Error( '{@ltd/j-fs} 原生 `fs` 模块中已经存在 `sync` 属性，为防止误用，特此终止！' ); }
+		const fs = { async:{}, sync:{} };
+		const sync = {};
+		const async = {};
 		for( const name in FS ){
 			if( name+'Sync' in FS ){
-				fs[name+'Async'] = Async( FS[name] );
+				sync[name] = FS[name+'Sync'];
+				async[name] = fs[name+'Async'] = Async( FS[name] );
 			}
 		}
 		fs.existsAsync = ExistsAsync( FS.access );
 		fs.createReadStreamAsync = CreateReadStreamAsync( FS.createReadStream );
 		fs.createWriteStreamAsync = CreateWriteStreamAsync( FS.createWriteStream );
+		Object.assign( fs.sync, sync );
+		Object.assign( fs.async, async );
 		return Object.assign( {}, fs, FS );
 	}
 
