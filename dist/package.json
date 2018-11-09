@@ -1,6 +1,6 @@
 {
 	"name":"@ltd/j-fs",
-	"version":"4.0.0",
+	"version":"4.1.0",
 	"description":"原生文件系统模块的 promisify 扩展。从属于“简计划”。",
 	"bugs":"https://GitHub.com/LongTengDao/j-fs/issues",
 	"license":"LGPL",

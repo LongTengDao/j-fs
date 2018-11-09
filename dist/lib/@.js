@@ -6,13 +6,35 @@ const _reject = Symbol('_reject');
 const _error = Symbol('_error');
 const _done = Symbol('_done');
 const _readable = Symbol('_readable');
+const { parse, stringify } = JSON;
+const undefined = void null;
 
-(({ Async, ExistsAsync, CreateReadStreamAsync, CreateWriteStreamAsync })=>{
+function toStringFollowBOM (buffer) {
+	switch( buffer[0] ){
+		case 0xEF: if( buffer[1]===0xBB && buffer[2]===0xBF ){ return buffer.slice(3).toString('utf8'); } break;
+		case 0xFF: if( buffer[1]===0xFE ){ return buffer.slice(2).toString('ucs2'); } break;
+		case 0xFE: if( buffer[1]===0xFF ){ return buffer.swap16().slice(2).toString('ucs2'); } break;
+	}
+	return buffer.toString();
+}
+
+function toStringWithBOM (buffer) {
+	switch( buffer[0] ){
+		case 0xEF: if( buffer[1]===0xBB && buffer[2]===0xBF ){ return buffer.toString('utf8'); } break;
+		case 0xFF: if( buffer[1]===0xFE ){ return buffer.toString('ucs2'); } break;
+		case 0xFE: if( buffer[1]===0xFF ){ return buffer.swap16().toString('ucs2'); } break;
+	}
+	return buffer.toString();
+}
+
+(({ ASync, Async, ExistsAsync, CreateReadStreamAsync, CreateWriteStreamAsync })=>{
+	
+	const { keys, prototype: { hasOwnProperty }, assign } = Object;
 
 	if( 'electron' in process.versions ){
 		require( 'electron' );
 		module.exports = Fs( 'original-fs' );
-		if( 'asar' in module.exports ){ throw new Error( '{@ltd/j-fs} 原生 `fs` 模块中已经存在 `asar` 属性，为防止误用，特此终止！' ); }
+		if( hasOwnProperty.call(module.exports,'asar') ){ throw new Error( '{@ltd/j-fs} 原生 `original-fs` 模块中已经存在 `asar` 属性，为防止误用，特此终止！' ); }
 		module.exports.asar = Fs( 'fs' );
 	}
 	else{
@@ -21,26 +43,86 @@ const _readable = Symbol('_readable');
 
 	function Fs( name ){
 		const FS = require( name );
-		if( 'async' in FS ){ throw new Error( '{@ltd/j-fs} 原生 `fs` 模块中已经存在 `async` 属性，为防止误用，特此终止！' ); }
-		if( 'sync' in FS ){ throw new Error( '{@ltd/j-fs} 原生 `fs` 模块中已经存在 `sync` 属性，为防止误用，特此终止！' ); }
-		const fs = { async:{}, sync:{} };
-		const sync = {};
-		const async = {};
-		for( const name in FS ){
-			if( name+'Sync' in FS ){
+		const fs = { async: { }, sync: { }, ...ASync( FS.readFile, FS.readFileSync, FS.writeFile, FS.writeFileSync ) };
+		for ( const key of keys(fs) ) {
+			if( hasOwnProperty.call(FS,key) ){ throw new Error( '{@ltd/j-fs} 原生 `'+name+'` 模块中已经存在 `'+key+'` 属性，为防止误用，特此终止！' ); }
+		}
+		const sync  = { readUTF: fs.readUTFSync,  readJSON: fs.readJSONSync,  writeJSON: fs.writeJSONSync  };
+		const async = { readUTF: fs.readUTFAsync, readJSON: fs.readJSONAsync, writeJSON: fs.writeJSONAsync };
+		for( const name of keys(FS) ){
+			if( hasOwnProperty.call(FS,name+'Sync') ){
 				sync[name] = FS[name+'Sync'];
 				async[name] = fs[name+'Async'] = Async( FS[name] );
 			}
 		}
-		fs.existsAsync = ExistsAsync( FS.access );
-		fs.createReadStreamAsync = CreateReadStreamAsync( FS.createReadStream );
-		fs.createWriteStreamAsync = CreateWriteStreamAsync( FS.createWriteStream );
-		Object.assign( fs.sync, sync );
-		Object.assign( fs.async, async );
-		return Object.assign( {}, fs, FS );
+		async.exists = fs.existsAsync = ExistsAsync( FS.access );
+		async.createReadStream = fs.createReadStreamAsync = CreateReadStreamAsync( FS.createReadStream );
+		async.createWriteStream = fs.createWriteStreamAsync = CreateWriteStreamAsync( FS.createWriteStream );
+		assign( fs.sync, sync );
+		assign( fs.async, async );
+		return assign( { }, fs, FS );
 	}
 
 })({
+	
+	ASync(readFile,readFileSync,writeFile,writeFileSync){
+		
+		return {
+			
+			readUTF(path,BOM,callback=BOM){
+				return readFile(path,(error,data)=>
+					error===null ? callback(null,(BOM===null?toStringFollowBOM:toStringWithBOM)(data)) : callback(error)
+				);
+			},
+			readUTFSync(path,BOM){
+				return (BOM===null?toStringFollowBOM:toStringWithBOM)(readFileSync(path),true);
+			},
+			readUTFAsync(path,BOM){
+				return new Promise((resolve,reject)=>
+					readFile(path,(error,data)=>
+						error===null ? resolve((BOM===null?toStringFollowBOM:toStringWithBOM)(data)) : reject(error)
+					)
+				);
+			},
+			
+			readJSON(path,reviver,callback){
+				if ( callback===undefined ) { callback = reviver; reviver = undefined; }
+				return readFile(path,'utf8',(error,data)=>
+					error===null ? callback(null,parse(data,reviver)) : callback(error)
+				);
+			},
+			readJSONSync(path,reviver){
+				return parse(readFileSync(path,'utf8'),reviver);
+			},
+			readJSONAsync(path,reviver){
+				return new Promise((resolve,reject)=>
+					readFile(path,'utf8',(error,data)=>
+						error===null ? resolve(parse(data,reviver)) : reject(error)
+					)
+				);
+			},
+			
+			writeJSON(path,data,replacer,space,callback){
+				if ( callback===undefined ) {
+					if ( space===undefined ) { callback = replacer; replacer = undefined; }
+					else { callback = space; space = undefined; }
+				}
+				return writeFile(path,stringify(data,replacer,space),callback);
+			},
+			writeJSONSync(path,data,replacer,space){
+				return writeFileSync(path,stringify(data,replacer,space));
+			},
+			writeJSONAsync(path,data,replacer,space){
+				return new Promise((resolve,reject)=>
+					writeFile(path,stringify(data,replacer,space),(error)=>
+						error===null ? resolve() : reject(error)
+					)
+				);
+			},
+			
+		};
+		
+	},
 
 	Async(method){
 		return function(){

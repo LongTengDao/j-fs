@@ -19,6 +19,8 @@
     而 `fs.createWriteStream` 方法的 `promisify` 版本 `fs.createWriteStreamAsync`，是在 `ready` 事件触发后，返回原始返回，并增加了 `writeAsync`、`endAsync` 方法。
     这两个方法无法通过 `util.promisify` 直接实现，`fs.promises` 中应该也不会提供这种实现。
 
+4.  额外实现了 `readUTF(path[,BOM],callback)`（`BOM===null` 时将自动剔除开头 `BOM` 字符）、`readJSON(path[,reviver],callback)`、`writeJSON(path,data[,replacer[,space]],callback)` 三个方法（均有 `fs.xxx`、`fs.xxxAsync`、`fs.xxxSync` 三套）。
+
 ## 对 `.asar` 文件虚拟目录的支持
 
 `electron` 环境下的 `require('fs')` 默认支持了将路径中的 `.asar` 文件作为文件夹访问的能力。
